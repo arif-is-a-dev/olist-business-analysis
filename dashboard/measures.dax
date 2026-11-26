@@ -1,0 +1,172 @@
+// =====================================================================
+// measures.dax
+// Kumpulan measure DAX untuk dashboard Olist.
+// Cara pakai: di Power BI Desktop buat tabel kosong bernama "_Measures"
+// (Home > Enter Data > langsung OK), lalu New Measure satu per satu
+// dan copy-paste setiap blok di bawah.
+//
+// Semua angka sudah dicocokkan dengan hasil SQL di outputs/
+// (lihat angka "Target" di komentar). Kalau hasil di Power BI beda,
+// berarti ada filter/relasi yang belum benar.
+//
+// Asumsi: report sudah diberi filter level report
+//   dim_date[in_analysis_period] = True
+// =====================================================================
+
+
+// ---------- PENJUALAN ----------
+
+Total Orders =
+CALCULATE (
+    COUNTROWS ( fact_orders ),
+    fact_orders[is_valid_sale] = TRUE ()
+)
+// Target: 97.910
+
+GMV =
+CALCULATE (
+    SUM ( fact_orders[order_value] ),
+    fact_orders[is_valid_sale] = TRUE ()
+)
+// Target: 15.688.396,64 (BRL)
+
+AOV =
+DIVIDE ( [GMV], [Total Orders] )
+// Target: 160,23
+
+Total Customers =
+CALCULATE (
+    DISTINCTCOUNT ( fact_orders[customer_unique_id] ),
+    fact_orders[is_valid_sale] = TRUE ()
+)
+// Target: 94.707
+
+Freight Share % =
+DIVIDE (
+    CALCULATE ( SUM ( fact_orders[freight_value] ), fact_orders[is_valid_sale] = TRUE () ),
+    [GMV]
+)
+// Target: 14,3%
+
+GMV Previous Month =
+CALCULATE ( [GMV], DATEADD ( dim_date[date], -1, MONTH ) )
+
+GMV MoM % =
+DIVIDE ( [GMV] - [GMV Previous Month], [GMV Previous Month] )
+
+GMV Same Period Last Year =
+CALCULATE ( [GMV], SAMEPERIODLASTYEAR ( dim_date[date] ) )
+
+GMV YoY % =
+DIVIDE ( [GMV] - [GMV Same Period Last Year], [GMV Same Period Last Year] )
+
+
+// ---------- PELANGGAN ----------
+
+Repeat Customers =
+CALCULATE (
+    COUNTROWS ( dim_customer ),
+    dim_customer[is_repeat_customer] = TRUE (),
+    dim_customer[rfm_segment] <> "Di luar periode"
+)
+
+Customers In Period =
+CALCULATE (
+    COUNTROWS ( dim_customer ),
+    dim_customer[rfm_segment] <> "Di luar periode"
+)
+
+Repeat Customer % =
+DIVIDE ( [Repeat Customers], [Customers In Period] )
+// Target: 3,04%
+
+Segment Spend =
+CALCULATE (
+    SUM ( dim_customer[monetary] ),
+    dim_customer[rfm_segment] <> "Di luar periode"
+)
+
+
+// ---------- PENGIRIMAN & KEPUASAN ----------
+// Hanya order delivered yang punya tanggal terima (is_late tidak kosong)
+
+Delivered Orders =
+CALCULATE (
+    COUNTROWS ( fact_orders ),
+    fact_orders[order_status] = "delivered",
+    NOT ISBLANK ( fact_orders[is_late] )
+)
+
+Late Orders =
+CALCULATE (
+    COUNTROWS ( fact_orders ),
+    fact_orders[order_status] = "delivered",
+    fact_orders[is_late] = TRUE ()
+)
+
+Late Delivery % =
+DIVIDE ( [Late Orders], [Delivered Orders] )
+// Target: 6,8% (6,7% kalau hanya order yang punya review)
+
+Avg Delivery Days =
+CALCULATE (
+    AVERAGE ( fact_orders[delivery_days] ),
+    fact_orders[is_valid_sale] = TRUE ()
+)
+// Target: 12,5 hari
+
+Avg Review Score =
+CALCULATE (
+    AVERAGE ( fact_orders[review_score] ),
+    fact_orders[is_valid_sale] = TRUE ()
+)
+// Target: 4,12
+
+Low Review % =
+DIVIDE (
+    CALCULATE ( COUNTROWS ( fact_orders ), fact_orders[review_score] <= 2, fact_orders[is_valid_sale] = TRUE () ),
+    CALCULATE ( COUNTROWS ( fact_orders ), NOT ISBLANK ( fact_orders[review_score] ), fact_orders[is_valid_sale] = TRUE () )
+)
+
+Avg Review (On Time) =
+CALCULATE ( AVERAGE ( fact_orders[review_score] ), fact_orders[is_late] = FALSE () )
+// Target: 4,29
+
+Avg Review (Late) =
+CALCULATE ( AVERAGE ( fact_orders[review_score] ), fact_orders[is_late] = TRUE () )
+// Target: 2,27
+
+
+// ---------- PRODUK & SELLER ----------
+// Revenue produk = harga barang saja (tanpa ongkir), dari fact_order_items
+
+Product Revenue =
+CALCULATE (
+    SUM ( fact_order_items[price] ),
+    fact_order_items[is_valid_sale] = TRUE ()
+)
+
+Active Sellers =
+CALCULATE (
+    DISTINCTCOUNT ( fact_order_items[seller_id] ),
+    fact_order_items[is_valid_sale] = TRUE ()
+)
+
+// Persentase kumulatif untuk chart Pareto kategori.
+// Dipakai di visual dengan sumbu dim_product[category_name].
+Category Cumulative % =
+VAR revenue_kategori_ini = [Product Revenue]
+VAR semua_kategori =
+    ADDCOLUMNS (
+        ALLSELECTED ( dim_product[category_name] ),
+        "@revenue", [Product Revenue]
+    )
+VAR revenue_kumulatif =
+    SUMX (
+        FILTER ( semua_kategori, [@revenue] >= revenue_kategori_ini ),
+        [@revenue]
+    )
+VAR revenue_total =
+    SUMX ( semua_kategori, [@revenue] )
+RETURN
+    DIVIDE ( revenue_kumulatif, revenue_total )

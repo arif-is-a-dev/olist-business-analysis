@@ -1,0 +1,6 @@
+delivery_bucket,orders,avg_review,low_review_pct
+1. Lebih cepat >= 10 hari,61270,4.32,8.9
+2. Lebih cepat 1-9 hari,26632,4.23,10.0
+3. Tepat di hari estimasi,1280,4.03,12.4
+4. Telat 1-7 hari,3599,2.71,49.4
+5. Telat > 7 hari,2779,1.7,79.3

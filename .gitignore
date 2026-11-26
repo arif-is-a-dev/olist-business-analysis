@@ -1,0 +1,7 @@
+# data besar, download sendiri dari Kaggle
+data/raw/*.csv
+data/model/*.csv
+*.duckdb
+*.duckdb.wal
+__pycache__/
+.venv/
